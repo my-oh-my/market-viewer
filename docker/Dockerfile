@@ -9,7 +9,7 @@ USER root
 # Switch back to airflow user
 USER airflow
 
-COPY requirements.txt /requirements.txt
+COPY ../requirements.txt /requirements.txt
 RUN pip install --no-cache-dir -r /requirements.txt
 
 
