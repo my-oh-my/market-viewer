@@ -2,18 +2,20 @@ version: '3.8'
 
 x-airflow-common:
   &airflow-common
-  build: .
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
   env_file:
-    - .env
+    - ../.env
   environment:
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__CORE__SQL_ALCHEMY_CONN}
     PYTHONPATH: /opt/airflow
   volumes:
-    - ./src:/opt/airflow/src
-    - ./dags:/opt/airflow/dags
-    - ./logs:/opt/airflow/logs
-    - ./plugins:/opt/airflow/plugins
-    - ./charts:/opt/airflow/charts
+    - ../src:/opt/airflow/src
+    - ../dags:/opt/airflow/dags
+    - ../logs:/opt/airflow/logs
+    - ../plugins:/opt/airflow/plugins
+    - ../charts:/opt/airflow/charts
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     - postgres
