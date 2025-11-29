@@ -3,12 +3,12 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "stochastic_oscilator_strategy"
+name = "market-viewer"
 version = "0.1.0"
 authors = [
   { name="Your Name", email="you@example.com" },
 ]
-description = "Stochastic Oscillator Strategy Trading Bot"
+description = "Market Viewer - Comprehensive Market Analysis Tool"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -19,5 +19,5 @@ classifiers = [
 package_dir = {"" = "src"}
 
 [project.urls]
-"Homepage" = "https://github.com/pypa/sampleproject"
-"Bug Tracker" = "https://github.com/pypa/sampleproject/issues"
+"Homepage" = "https://github.com/my-oh-my/market-viewer"
+"Bug Tracker" = "https://github.com/my-oh-my/market-viewer/issues"

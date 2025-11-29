@@ -1,6 +1,6 @@
-# Stochastic Strategy
+# Market Viewer
 
-This project is a skeleton for a Python-based stochastic strategy application.
+This project is a skeleton for a Python-based market analysis application, starting with a stochastic strategy.
 
 ## Setup
 

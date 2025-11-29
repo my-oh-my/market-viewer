@@ -157,7 +157,7 @@ SYMBOLS = ",".join(W20_SYMBOLS + MWIG40_SYMBOLS + SWIG80_SYMBOLS)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Stochastic Strategy")
+    parser = argparse.ArgumentParser(description="Market Viewer")
     parser.add_argument(
         "--symbols",
         type=str,
@@ -185,13 +185,13 @@ if __name__ == "__main__":
         "--k-window",
         type=int,
         default=14,
-        help="The window size for the %K line in the Stochastic Oscillator.",
+        help="The window size for the %%K line in the Stochastic Oscillator.",
     )
     parser.add_argument(
         "--d-window",
         type=int,
         default=3,
-        help="The window size for the %D line (smoothing) in the Stochastic Oscillator.",
+        help="The window size for the %%D line (smoothing) in the Stochastic Oscillator.",
     )
     parser.add_argument(
         "--save-html-dir",
