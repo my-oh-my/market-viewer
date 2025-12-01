@@ -9,8 +9,6 @@ from plotly.subplots import make_subplots
 def _parse_interval_to_minutes(interval_str: str) -> int:
     """Converts an interval string (e.g., '1m', '1h', '1d', '1wk', '1mo') to minutes."""
     unit_map = {"m": 1, "h": 60, "d": 24 * 60, "wk": 7 * 24 * 60}
-
-    # Sort units by length, descending, to handle 'wk' before 'k' if 'k' were a unit.
     sorted_units = sorted(unit_map.keys(), key=len, reverse=True)
 
     for unit in sorted_units:
@@ -22,179 +20,304 @@ def _parse_interval_to_minutes(interval_str: str) -> int:
     raise ValueError(f"Unknown or invalid interval format: {interval_str}")
 
 
-def _add_colored_ranges(
-    fig: go.Figure,
-    merged_df: pd.DataFrame,
-    intervals: list[str],
+def _plot_candlestick(
+    fig: go.Figure, data: pd.DataFrame, interval: str, row: int, col: int
 ):
-    """Adds colored vertical ranges to the candlestick chart in an optimized way."""
+    """Adds a candlestick trace to the figure."""
+    fig.add_trace(
+        go.Candlestick(
+            x=data["Datetime"],
+            open=data["Open"],
+            high=data["High"],
+            low=data["Low"],
+            close=data["Close"],
+            name=f"Candlestick ({interval})",
+        ),
+        row=row,
+        col=col,
+    )
 
-    # Vectorized conditions for better performance
-    overbought_conditions = [merged_df[f"%K_{interval}"] > 80 for interval in intervals]
-    oversold_conditions = [merged_df[f"%K_{interval}"] < 20 for interval in intervals]
 
-    all_overbought = pd.concat(overbought_conditions, axis=1).all(axis=1)
-    all_oversold = pd.concat(oversold_conditions, axis=1).all(axis=1)
+def _plot_stochastic(
+    fig: go.Figure,
+    data: pd.DataFrame,
+    interval: str,
+    row: int | None = None,
+    col: int | None = None,
+    yaxis: str | None = None,
+):  # pylint: disable=too-many-arguments
+    """Adds stochastic oscillator traces to the figure."""
+    # Common args for traces
+    trace_args = {
+        "x": data["Datetime"],
+        "mode": "lines",
+    }
+    if yaxis:
+        trace_args["yaxis"] = yaxis
+        # If yaxis is specified, we don't use row/col for placement
+        # as we are likely overlaying.
 
-    # Helper function to find consecutive ranges and add a single rectangle for each
-    def find_and_add_ranges(condition, color):
-        # Find indices where the condition starts and ends
-        starts = merged_df.index[condition & ~condition.shift(fill_value=False)]
-        ends = merged_df.index[condition & ~condition.shift(-1, fill_value=False)]
+    fig.add_trace(
+        go.Scatter(
+            y=data["%K"],
+            name=f"%K ({interval})",
+            line={"width": 2},
+            **trace_args,
+        ),
+        row=row if not yaxis else None,
+        col=col if not yaxis else None,
+    )
+    fig.add_trace(
+        go.Scatter(
+            y=data["%D"],
+            name=f"%D ({interval})",
+            line={"width": 1, "dash": "dash"},
+            **trace_args,
+        ),
+        row=row if not yaxis else None,
+        col=col if not yaxis else None,
+    )
 
-        for start, end in zip(starts, ends):
-            x0 = merged_df.loc[start, "Datetime"]
 
-            # The end of the range should be the start of the next candle
-            end_iloc = merged_df.index.get_loc(end)
-            if end_iloc + 1 < len(merged_df):
-                x1 = merged_df["Datetime"].iloc[end_iloc + 1]
-            else:
-                # For the last candle in the dataframe, we can't get the next candle's start time.
-                # We'll use the current candle's start time, creating a zero-width rectangle,
-                # which is consistent with the original implementation's behavior for the last point.
-                x1 = merged_df.loc[end, "Datetime"]
+def _plot_consolidation(fig: go.Figure, data: pd.DataFrame, row: int, col: int):
+    """Highlights consolidation regions on the chart."""
+    if "Is_Consolidation" not in data.columns:
+        return
 
-            fig.add_vrect(
-                x0=x0,
-                x1=x1,
-                fillcolor=color,
-                layer="below",
-                line_width=0,
-                row=1,
-                col=1,
+    # Find ranges where Is_Consolidation is True
+    consolidation_mask = data["Is_Consolidation"]
+    starts = data.index[
+        consolidation_mask & ~consolidation_mask.shift(fill_value=False)
+    ]
+    ends = data.index[
+        consolidation_mask & ~consolidation_mask.shift(-1, fill_value=False)
+    ]
+
+    for start, end in zip(starts, ends):
+        x0 = data.loc[start, "Datetime"]
+        # End of the range
+        end_iloc = data.index.get_loc(end)
+        if end_iloc + 1 < len(data):
+            x1 = data["Datetime"].iloc[end_iloc + 1]
+        else:
+            x1 = data.loc[end, "Datetime"]
+
+        fig.add_vrect(
+            x0=x0,
+            x1=x1,
+            fillcolor="rgba(255, 165, 0, 0.2)",  # Orange for consolidation
+            layer="below",
+            line_width=0,
+            row=row,
+            col=col,
+        )
+
+
+def _plot_volume_profile(fig: go.Figure, volume_profile: pd.DataFrame):
+    """Adds a Volume Profile histogram to the chart."""
+    if volume_profile.empty:
+        return
+
+    # Configure secondary x-axis for volume profile overlay
+    # We use 'xaxis5' to avoid conflict with axes generated by make_subplots
+    # (x, y, x2, y2, etc. are used by the subplots)
+    fig.update_layout(
+        xaxis5={
+            "title": "Volume",
+            "overlaying": "x",  # Overlay on the first subplot's x-axis
+            "side": "top",
+            "showgrid": False,
+            "showticklabels": False,
+        }
+    )
+
+    # Plot Bullish Volume
+    fig.add_trace(
+        go.Bar(
+            y=volume_profile["Price_Bin_Mid"],
+            x=volume_profile["Bullish_Volume"],
+            orientation="h",
+            name="Bullish Volume",
+            marker_color="rgba(0, 255, 0, 0.3)",  # Green with transparency
+            xaxis="x5",
+            yaxis="y",
+            legendgroup="Volume Profile",
+        )
+    )
+
+    # Plot Bearish Volume
+    fig.add_trace(
+        go.Bar(
+            y=volume_profile["Price_Bin_Mid"],
+            x=volume_profile["Bearish_Volume"],
+            orientation="h",
+            name="Bearish Volume",
+            marker_color="rgba(255, 0, 0, 0.3)",  # Red with transparency
+            xaxis="x5",
+            yaxis="y",
+            legendgroup="Volume Profile",
+        )
+    )
+
+    # Plot POC Line
+    if "POC" in volume_profile.columns:
+        poc_row = volume_profile[volume_profile["POC"]]
+        if not poc_row.empty:
+            poc_price = poc_row["Price_Bin_Mid"].values[0]
+            max_vol = volume_profile["Total_Volume"].max()
+
+            # Add a line for POC
+            fig.add_trace(
+                go.Scatter(
+                    x=[0, max_vol],
+                    y=[poc_price, poc_price],
+                    mode="lines",
+                    line={"color": "blue", "width": 2, "dash": "dash"},
+                    name=f"POC ({poc_price:.2f})",
+                    xaxis="x5",
+                    yaxis="y",
+                    legendgroup="Volume Profile",
+                )
             )
 
-    find_and_add_ranges(all_overbought, "rgba(255, 0, 0, 0.2)")
-    find_and_add_ranges(all_oversold, "rgba(0, 255, 0, 0.2)")
+
+def _plot_distribution(
+    fig: go.Figure,
+    data: pd.Series,
+    name: str,
+    row: int,
+    col: int,
+    color: str = "blue",
+):  # pylint: disable=too-many-arguments
+    """Adds a histogram distribution to the figure."""
+    if data.empty:
+        return
+
+    # Calculate histogram
+    fig.add_trace(
+        go.Histogram(
+            x=data,
+            name=f"{name} Dist",
+            marker_color=color,
+            opacity=0.7,
+            showlegend=False,
+        ),
+        row=row,
+        col=col,
+    )
+
+    # Highlight the most recent value
+    last_val = data.iloc[-1]
+    fig.add_vline(
+        x=last_val,
+        line_width=2,
+        line_dash="dash",
+        line_color="black",
+        annotation_text=f"Last: {last_val:.2f}",
+        annotation_position="top right",
+        row=row,
+        col=col,
+    )
 
 
-def generate_stochastic_chart(
+def generate_analysis_chart(
     symbol: str,
     data_dict: dict[str, pd.DataFrame],
+    volume_profiles: dict[str, pd.DataFrame] | None = None,
     output_dir: str | None = None,
 ):
-    """Generates and either saves or displays a stochastic chart with a candlestick subplot.
-
-    Args:
-        symbol: The market symbol (e.g., "BTC-USD").
-        data_dict: A dictionary where keys are intervals (e.g., "1h")
-                   and values are DataFrames with stochastic data.
-        output_dir: If provided, saves the chart as an HTML file in this directory.
-                    If None, opens the chart in a web browser.
-    """
+    """Generates and saves/displays a dashboard with analysis features."""
     if not data_dict:
         print("No data to plot.")
         return
 
-    # Find the lowest interval for the candlestick chart
     lowest_interval = min(data_dict.keys(), key=_parse_interval_to_minutes)
     candlestick_data = data_dict[lowest_interval].copy()
 
-    # Merge dataframes
-    merged_df = candlestick_data
-    sorted_intervals = sorted(data_dict.keys(), key=_parse_interval_to_minutes)
-
-    for interval in sorted_intervals:
-        if interval == lowest_interval:
-            merged_df.rename(
-                columns={"%K": f"%K_{interval}", "%D": f"%D_{interval}"}, inplace=True
-            )
-        else:
-            data_to_merge = data_dict[interval][["Datetime", "%K", "%D"]].copy()
-            data_to_merge.rename(
-                columns={"%K": f"%K_{interval}", "%D": f"%D_{interval}"}, inplace=True
-            )
-            merged_df = pd.merge_asof(
-                merged_df,
-                data_to_merge,
-                on="Datetime",
-                direction="backward",
-            )
-
     # Create subplots
+    # Row 1: Price + Volume Profile + Consolidation (Span 2 cols)
+    # Row 2: Stochastic (Span 2 cols)
+    # Row 3: RoR Distribution (Col 1) | Volume Distribution (Col 2)
     fig = make_subplots(
-        rows=2,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.03,
-        row_heights=[0.7, 0.3],
-    )
-
-    # Candlestick chart for the lowest interval
-    fig.add_trace(
-        go.Candlestick(
-            x=candlestick_data["Datetime"],
-            open=candlestick_data["Open"],
-            high=candlestick_data["High"],
-            low=candlestick_data["Low"],
-            close=candlestick_data["Close"],
-            name=f"Candlestick ({lowest_interval})",
+        rows=3,
+        cols=2,
+        shared_xaxes=True,  # Shared for Row 1 and 2 (Price & Stoch)
+        vertical_spacing=0.05,  # Minimal spacing to prevent overlap while keeping visual connection
+        row_heights=[0.5, 0.2, 0.3],  # Give Price more room, Stoch less
+        specs=[
+            [{"colspan": 2}, None],  # Row 1: Price
+            [{"colspan": 2}, None],  # Row 2: Stochastic
+            [{}, {}],  # Row 3: Distributions
+        ],
+        subplot_titles=(
+            f"{symbol} Price ({lowest_interval})",
+            "",  # No title for Stochastic to blend it with Price
+            "RoR Distribution",
+            "Volume Distribution",
         ),
-        row=1,
-        col=1,
     )
 
-    # Stochastic oscillators for all intervals
+    # 1. Price Chart (Row 1, Col 1 - spans 2)
+    _plot_candlestick(fig, candlestick_data, lowest_interval, row=1, col=1)
+    _plot_consolidation(fig, candlestick_data, row=1, col=1)
+    if volume_profiles and lowest_interval in volume_profiles:
+        _plot_volume_profile(fig, volume_profiles[lowest_interval])
+
+    # 2. Stochastic (Row 2, Col 1 - spans 2)
+    # We plot this in the second row, sharing x-axis with Row 1
     for interval, data in data_dict.items():
-        fig.add_trace(
-            go.Scatter(
-                x=data["Datetime"],
-                y=data["%K"],
-                mode="lines",
-                name=f"%K ({interval})",
-                line={"width": 2},
-            ),
-            row=2,
+        _plot_stochastic(fig, data, interval, row=2, col=1)
+
+    # Stochastic levels
+    fig.add_hline(y=80, line_dash="dot", line_color="red", row=2, col=1)
+    fig.add_hline(y=20, line_dash="dot", line_color="green", row=2, col=1)
+
+    # 3. Distributions (Row 3)
+    # RoR Distribution (Col 1)
+    if "RoR" in candlestick_data.columns:
+        _plot_distribution(
+            fig,
+            candlestick_data["RoR"].dropna(),
+            "RoR",
+            row=3,
             col=1,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=data["Datetime"],
-                y=data["%D"],
-                mode="lines",
-                name=f"%D ({interval})",
-                line={"width": 1, "dash": "dash"},
-            ),
-            row=2,
-            col=1,
+            color="purple",
         )
 
+    # Volume Distribution (Col 2)
+    if "Volume" in candlestick_data.columns:
+        _plot_distribution(
+            fig,
+            candlestick_data["Volume"],
+            "Volume",
+            row=3,
+            col=2,
+            color="orange",
+        )
+
+    # Layout updates
     fig.update_layout(
-        title_text=f"Stochastic Oscillator and Candlestick Chart for {symbol}",
+        title_text=f"Market Analysis Dashboard for {symbol}",
         template="plotly_white",
         xaxis_rangeslider_visible=False,
         legend_title="Indicators",
+        bargap=0,
+        barmode="stack",
+        height=1000,
+        width=1400,
     )
+
     fig.update_yaxes(title_text="Price", row=1, col=1)
-    fig.update_yaxes(title_text="Stochastic Value", row=2, col=1)
-
-    # Add horizontal lines for overbought and oversold levels to the second subplot
-    fig.add_hline(
-        y=80,
-        line_dash="dot",
-        line_color="red",
-        annotation_text="Overbought",
-        row=2,
-        col=1,
-    )
-    fig.add_hline(
-        y=20,
-        line_dash="dot",
-        line_color="green",
-        annotation_text="Oversold",
-        row=2,
-        col=1,
-    )
-
-    _add_colored_ranges(fig, merged_df, list(data_dict.keys()))
+    fig.update_yaxes(title_text="Stoch", row=2, col=1)
+    fig.update_xaxes(title_text="RoR %", row=3, col=1)
+    fig.update_xaxes(title_text="Volume", row=3, col=2)
 
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
         chart_filename = os.path.join(
-            output_dir, f"{symbol.replace('/', '_')}_stochastic_chart.html"
+            output_dir, f"{symbol.replace('/', '_')}_analysis_dashboard.html"
         )
         fig.write_html(chart_filename)
-        print(f"Chart saved to {chart_filename}")
+        print(f"Dashboard saved to {chart_filename}")
     else:
         fig.show()

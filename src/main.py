@@ -1,7 +1,7 @@
 """Main entry point for the application."""
 
 import argparse
-from src.stochastic_processing import run
+from src.processor import process_symbol
 
 
 W20_SYMBOLS = [
@@ -199,5 +199,44 @@ if __name__ == "__main__":
         default=None,
         help="Save the chart as an HTML file in the specified directory.",
     )
+
+    # New Analysis Arguments
+    parser.add_argument(
+        "--volume-profile",
+        action="store_true",
+        help="Calculate and display Volume Profile.",
+    )
+    parser.add_argument(
+        "--vp-bins",
+        type=int,
+        default=50,
+        help="Number of bins for Volume Profile calculation.",
+    )
+    parser.add_argument(
+        "--consolidation",
+        action="store_true",
+        help="Detect and highlight consolidation zones.",
+    )
+    parser.add_argument(
+        "--consolidation-window",
+        type=int,
+        default=20,
+        help="Window size for consolidation detection.",
+    )
+    parser.add_argument(
+        "--consolidation-threshold",
+        type=float,
+        default=2.0,
+        help="Percentage threshold for consolidation detection.",
+    )
+    parser.add_argument(
+        "--ror",
+        action="store_true",
+        help="Calculate and display Rate of Return.",
+    )
+
     args = parser.parse_args()
-    run(args)
+
+    symbols_list = [s.strip() for s in args.symbols.split(",")]
+    for symbol in symbols_list:
+        process_symbol(symbol, args)
