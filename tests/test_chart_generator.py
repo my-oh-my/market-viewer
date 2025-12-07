@@ -3,13 +3,11 @@
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
-import plotly.graph_objects as go
 import pytest
 
 from src.chart_generator import (
-    _add_colored_ranges,
     _parse_interval_to_minutes,
-    generate_stochastic_chart,
+    generate_analysis_chart,
 )
 
 
@@ -39,79 +37,9 @@ def test_parse_interval_to_minutes_invalid(invalid_interval):
         _parse_interval_to_minutes(invalid_interval)
 
 
-def test_add_colored_ranges():
-    """Test that _add_colored_ranges calls add_vrect with the correct parameters."""
-    # Arrange
-    fig = MagicMock(spec=go.Figure)
-    merged_df = pd.DataFrame(
-        {
-            "Datetime": pd.to_datetime(
-                ["2023-01-01", "2023-01-02", "2023-01-03", "2023-01-04"]
-            ),
-            "%K_1h": [85, 50, 15, 50],
-            "%K_4h": [90, 50, 10, 50],
-        }
-    )
-    intervals = ["1h", "4h"]
-
-    # Act
-    _add_colored_ranges(fig, merged_df, intervals)
-
-    # Assert
-    assert fig.add_vrect.call_count == 2
-    fig.add_vrect.assert_any_call(
-        x0=pd.to_datetime("2023-01-01"),
-        x1=pd.to_datetime("2023-01-02"),
-        fillcolor="rgba(255, 0, 0, 0.2)",
-        layer="below",
-        line_width=0,
-        row=1,
-        col=1,
-    )
-    fig.add_vrect.assert_any_call(
-        x0=pd.to_datetime("2023-01-03"),
-        x1=pd.to_datetime("2023-01-04"),
-        fillcolor="rgba(0, 255, 0, 0.2)",
-        layer="below",
-        line_width=0,
-        row=1,
-        col=1,
-    )
-
-
-def test_add_colored_ranges_last_candle():
-    """Test _add_colored_ranges handles conditions on the last candle."""
-    # Arrange
-    fig = MagicMock(spec=go.Figure)
-    merged_df = pd.DataFrame(
-        {
-            "Datetime": pd.to_datetime(
-                ["2023-01-01", "2023-01-02", "2023-01-03", "2023-01-04"]
-            ),
-            "%K_1h": [50, 50, 50, 85],
-            "%K_4h": [50, 50, 50, 90],
-        }
-    )
-    intervals = ["1h", "4h"]
-
-    # Act
-    _add_colored_ranges(fig, merged_df, intervals)
-
-    # Assert
-    fig.add_vrect.assert_called_once_with(
-        x0=pd.to_datetime("2023-01-04"),
-        x1=pd.to_datetime("2023-01-04"),
-        fillcolor="rgba(255, 0, 0, 0.2)",
-        layer="below",
-        line_width=0,
-        row=1,
-        col=1,
-    )
-
-
 @patch("src.chart_generator.make_subplots")
-def test_generate_stochastic_chart_save_only(mock_make_subplots, tmp_path):
-    """Test that generate_stochastic_chart saves the chart when output_dir is provided."""
+def test_generate_analysis_chart_save_only(mock_make_subplots, tmp_path):
+    """Test that generate_analysis_chart saves the chart when output_dir is provided."""
     # Arrange
     mock_fig = MagicMock()
     mock_make_subplots.return_value = mock_fig
@@ -126,6 +54,7 @@ def test_generate_stochastic_chart_save_only(mock_make_subplots, tmp_path):
                 "High": [110],
                 "Low": [90],
                 "Close": [105],
+                "Volume": [1000],
                 "%K": [80],
                 "%D": [75],
             }
@@ -133,17 +62,17 @@ def test_generate_stochastic_chart_save_only(mock_make_subplots, tmp_path):
     }
 
     # Act
-    generate_stochastic_chart("BTC/USD", data_dict, output_dir=str(output_dir))
+    generate_analysis_chart("BTC/USD", data_dict, output_dir=str(output_dir))
 
     # Assert
-    expected_path = output_dir / "BTC_USD_stochastic_chart.html"
+    expected_path = output_dir / "BTC_USD_analysis_dashboard.html"
     mock_fig.write_html.assert_called_once_with(str(expected_path))
     mock_fig.show.assert_not_called()
 
 
 @patch("src.chart_generator.make_subplots")
-def test_generate_stochastic_chart_show(mock_make_subplots):
-    """Test that generate_stochastic_chart shows the chart when output_dir is None."""
+def test_generate_analysis_chart_show(mock_make_subplots):
+    """Test that generate_analysis_chart shows the chart when output_dir is None."""
     # Arrange
     mock_fig = MagicMock()
     mock_make_subplots.return_value = mock_fig
@@ -156,6 +85,7 @@ def test_generate_stochastic_chart_show(mock_make_subplots):
                 "High": [110],
                 "Low": [90],
                 "Close": [105],
+                "Volume": [1000],
                 "%K": [80],
                 "%D": [75],
             }
@@ -163,53 +93,55 @@ def test_generate_stochastic_chart_show(mock_make_subplots):
     }
 
     # Act
-    generate_stochastic_chart("BTC-USD", data_dict)
+    generate_analysis_chart("BTC-USD", data_dict)
 
     # Assert
     mock_fig.show.assert_called_once()
     mock_fig.write_html.assert_not_called()
 
 
+def test_generate_analysis_chart_no_data(tmp_path):
+    """Test that generate_analysis_chart handles an empty data_dict gracefully."""
+    # Act & Assert (should not raise an error)
+    generate_analysis_chart("BTC-USD", {}, output_dir=str(tmp_path))
+
+
 @patch("src.chart_generator.make_subplots")
-def test_generate_stochastic_chart_multiple_intervals(mock_make_subplots):
-    """Test generate_stochastic_chart with multiple intervals."""
+def test_generate_analysis_chart_with_consolidation(mock_make_subplots):
+    """Test that generate_analysis_chart plots consolidation zones."""
     # Arrange
     mock_fig = MagicMock()
     mock_make_subplots.return_value = mock_fig
 
-    data_dict = {
-        "1h": pd.DataFrame(
-            {
-                "Datetime": pd.to_datetime(["2023-01-01"]),
-                "Open": [100],
-                "High": [110],
-                "Low": [90],
-                "Close": [105],
-                "%K": [80],
-                "%D": [75],
-            }
-        ),
-        "4h": pd.DataFrame(
-            {
-                "Datetime": pd.to_datetime(["2023-01-01"]),
-                "Open": [100],
-                "High": [110],
-                "Low": [90],
-                "Close": [105],
-                "%K": [85],
-                "%D": [80],
-            }
-        ),
-    }
+    # Create data with consolidation
+    # 10 points, last 5 are consolidation
+    dates = pd.date_range(start="2023-01-01", periods=10, freq="1h")
+    data = pd.DataFrame(
+        {
+            "Datetime": dates,
+            "Open": [100] * 10,
+            "High": [101] * 10,
+            "Low": [99] * 10,
+            "Close": [100] * 10,
+            "Volume": [1000] * 10,
+            "%K": [50] * 10,
+            "%D": [50] * 10,
+            "Is_Consolidation": [False] * 5 + [True] * 5,
+        }
+    )
+
+    data_dict = {"1h": data}
 
     # Act
-    generate_stochastic_chart("BTC-USD", data_dict)
+    # Window 3, so if consolidation starts at index 5, visual start should be 5-3+1 = 3
+    generate_analysis_chart("BTC-USD", data_dict, consolidation_window=3)
 
     # Assert
-    assert mock_fig.add_trace.call_count == 5
+    # add_vrect should be called for the consolidation zone
+    assert mock_fig.add_vrect.called
 
-
-def test_generate_stochastic_chart_no_data(tmp_path):
-    """Test that generate_stochastic_chart handles an empty data_dict gracefully."""
-    # Act & Assert (should not raise an error)
-    generate_stochastic_chart("BTC-USD", {}, output_dir=str(tmp_path))
+    # Verify arguments of the call if possible, but just checking it's called is a good start
+    # The first call args:
+    _, kwargs = mock_fig.add_vrect.call_args
+    # x0 should be dates[3] (index 5 - 3 + 1 = 3)
+    assert kwargs["x0"] == dates[3]

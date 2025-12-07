@@ -57,7 +57,7 @@ def test_detect_consolidation():
     )
 
     is_consolidation = price.detect_consolidation(
-        consolidation_data, window=5, threshold_percent=1.0
+        consolidation_data, window=5, threshold_multiplier=1.0, use_atr=False
     )
 
     assert is_consolidation.iloc[-1]
@@ -72,7 +72,7 @@ def test_detect_consolidation():
     )
 
     is_consolidation_trend = price.detect_consolidation(
-        trending_data, window=3, threshold_percent=1.0
+        trending_data, window=3, threshold_multiplier=1.0, use_atr=False
     )
 
     assert not is_consolidation_trend.iloc[-1]

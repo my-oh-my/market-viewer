@@ -79,7 +79,72 @@ def _plot_stochastic(
     )
 
 
-def _plot_consolidation(fig: go.Figure, data: pd.DataFrame, row: int, col: int):
+def _plot_vwap(fig: go.Figure, data: pd.DataFrame, row: int, col: int):
+    """Adds VWAP and SD bands to the figure."""
+    if "VWAP" not in data.columns:
+        return
+
+    # Plot VWAP
+    fig.add_trace(
+        go.Scatter(
+            x=data["Datetime"],
+            y=data["VWAP"],
+            name="VWAP",
+            line={"color": "orange", "width": 2},
+        ),
+        row=row,
+        col=col,
+    )
+
+    # Plot Bands
+    if "VWAP_Upper" in data.columns and "VWAP_Lower" in data.columns:
+        # Upper Band
+        fig.add_trace(
+            go.Scatter(
+                x=data["Datetime"],
+                y=data["VWAP_Upper"],
+                name="VWAP Upper (2SD)",
+                line={"color": "gray", "width": 1, "dash": "dot"},
+                showlegend=False,
+            ),
+            row=row,
+            col=col,
+        )
+        # Lower Band
+        fig.add_trace(
+            go.Scatter(
+                x=data["Datetime"],
+                y=data["VWAP_Lower"],
+                name="VWAP Lower (2SD)",
+                line={"color": "gray", "width": 1, "dash": "dot"},
+                fill="tonexty",  # Fill area between upper and lower
+                fillcolor="rgba(128, 128, 128, 0.1)",
+                showlegend=False,
+            ),
+            row=row,
+            col=col,
+        )
+
+
+def _plot_support_resistance(fig: go.Figure, levels: list[float], row: int, col: int):
+    """Adds Support and Resistance lines."""
+    if not levels:
+        return
+
+    for level in levels:
+        fig.add_hline(
+            y=level,
+            line_dash="dot",
+            line_color="rgba(0, 0, 255, 0.4)",
+            line_width=1,
+            row=row,
+            col=col,
+        )
+
+
+def _plot_consolidation(
+    fig: go.Figure, data: pd.DataFrame, row: int, col: int, window: int = 20
+):
     """Highlights consolidation regions on the chart."""
     if "Is_Consolidation" not in data.columns:
         return
@@ -94,7 +159,11 @@ def _plot_consolidation(fig: go.Figure, data: pd.DataFrame, row: int, col: int):
     ]
 
     for start, end in zip(starts, ends):
-        x0 = data.loc[start, "Datetime"]
+        # Adjust start to include the window that triggered the consolidation
+        # The consolidation flag at 'start' means the window [start-window+1, start] is consolidated
+        adjusted_start = max(0, start - window + 1)
+        x0 = data.loc[adjusted_start, "Datetime"]
+
         # End of the range
         end_iloc = data.index.get_loc(end)
         if end_iloc + 1 < len(data):
@@ -132,32 +201,121 @@ def _plot_volume_profile(fig: go.Figure, volume_profile: pd.DataFrame):
     )
 
     # Plot Bullish Volume
-    fig.add_trace(
-        go.Bar(
-            y=volume_profile["Price_Bin_Mid"],
-            x=volume_profile["Bullish_Volume"],
-            orientation="h",
-            name="Bullish Volume",
-            marker_color="rgba(0, 255, 0, 0.3)",  # Green with transparency
-            xaxis="x5",
-            yaxis="y",
-            legendgroup="Volume Profile",
-        )
-    )
+    # Split into Value Area and Non-Value Area for coloring
+    # This is a bit complex with stacked bars.
+    # Simpler approach: Plot all, then overlay VA highlight or just use different colors if we can.
+    # Let's use the 'In_VA' column if available.
 
-    # Plot Bearish Volume
-    fig.add_trace(
-        go.Bar(
-            y=volume_profile["Price_Bin_Mid"],
-            x=volume_profile["Bearish_Volume"],
-            orientation="h",
-            name="Bearish Volume",
-            marker_color="rgba(255, 0, 0, 0.3)",  # Red with transparency
-            xaxis="x5",
-            yaxis="y",
-            legendgroup="Volume Profile",
+    if "In_VA" in volume_profile.columns:
+        # We need to plot 4 traces: Bullish In VA, Bullish Out VA, Bearish In VA, Bearish Out VA
+
+        # Bullish In VA
+        fig.add_trace(
+            go.Bar(
+                y=volume_profile[volume_profile["In_VA"]]["Price_Bin_Mid"],
+                x=volume_profile[volume_profile["In_VA"]]["Bullish_Volume"],
+                orientation="h",
+                name="Bullish Vol (VA)",
+                marker_color="rgba(0, 255, 0, 0.6)",  # Darker Green
+                xaxis="x5",
+                yaxis="y",
+                legendgroup="Volume Profile",
+                showlegend=False,
+            )
         )
-    )
+        # Bullish Out VA
+        fig.add_trace(
+            go.Bar(
+                y=volume_profile[~volume_profile["In_VA"]]["Price_Bin_Mid"],
+                x=volume_profile[~volume_profile["In_VA"]]["Bullish_Volume"],
+                orientation="h",
+                name="Bullish Vol",
+                marker_color="rgba(0, 255, 0, 0.2)",  # Lighter Green
+                xaxis="x5",
+                yaxis="y",
+                legendgroup="Volume Profile",
+            )
+        )
+        # Bearish In VA
+        fig.add_trace(
+            go.Bar(
+                y=volume_profile[volume_profile["In_VA"]]["Price_Bin_Mid"],
+                x=volume_profile[volume_profile["In_VA"]]["Bearish_Volume"],
+                orientation="h",
+                name="Bearish Vol (VA)",
+                marker_color="rgba(255, 0, 0, 0.6)",  # Darker Red
+                xaxis="x5",
+                yaxis="y",
+                legendgroup="Volume Profile",
+                showlegend=False,
+            )
+        )
+        # Bearish Out VA
+        fig.add_trace(
+            go.Bar(
+                y=volume_profile[~volume_profile["In_VA"]]["Price_Bin_Mid"],
+                x=volume_profile[~volume_profile["In_VA"]]["Bearish_Volume"],
+                orientation="h",
+                name="Bearish Vol",
+                marker_color="rgba(255, 0, 0, 0.2)",  # Lighter Red
+                xaxis="x5",
+                yaxis="y",
+                legendgroup="Volume Profile",
+            )
+        )
+
+        # Plot VAH and VAL lines
+        va_prices = volume_profile[volume_profile["In_VA"]]["Price_Bin_Mid"]
+        if not va_prices.empty:
+            vah = va_prices.max()
+            val = va_prices.min()
+
+            fig.add_hline(
+                y=vah,
+                line_color="orange",
+                line_width=1,
+                line_dash="dash",
+                row=1,
+                col=1,
+                annotation_text="VAH",
+            )
+            fig.add_hline(
+                y=val,
+                line_color="orange",
+                line_width=1,
+                line_dash="dash",
+                row=1,
+                col=1,
+                annotation_text="VAL",
+            )
+
+    else:
+        # Fallback to old simple plotting
+        fig.add_trace(
+            go.Bar(
+                y=volume_profile["Price_Bin_Mid"],
+                x=volume_profile["Bullish_Volume"],
+                orientation="h",
+                name="Bullish Volume",
+                marker_color="rgba(0, 255, 0, 0.3)",  # Green with transparency
+                xaxis="x5",
+                yaxis="y",
+                legendgroup="Volume Profile",
+            )
+        )
+
+        fig.add_trace(
+            go.Bar(
+                y=volume_profile["Price_Bin_Mid"],
+                x=volume_profile["Bearish_Volume"],
+                orientation="h",
+                name="Bearish Volume",
+                marker_color="rgba(255, 0, 0, 0.3)",  # Red with transparency
+                xaxis="x5",
+                yaxis="y",
+                legendgroup="Volume Profile",
+            )
+        )
 
     # Plot POC Line
     if "POC" in volume_profile.columns:
@@ -224,8 +382,10 @@ def generate_analysis_chart(
     symbol: str,
     data_dict: dict[str, pd.DataFrame],
     volume_profiles: dict[str, pd.DataFrame] | None = None,
+    support_resistance_levels: list[float] | None = None,
     output_dir: str | None = None,
-):
+    consolidation_window: int = 20,
+):  # pylint: disable=too-many-arguments
     """Generates and saves/displays a dashboard with analysis features."""
     if not data_dict:
         print("No data to plot.")
@@ -259,7 +419,13 @@ def generate_analysis_chart(
 
     # 1. Price Chart (Row 1, Col 1 - spans 2)
     _plot_candlestick(fig, candlestick_data, lowest_interval, row=1, col=1)
-    _plot_consolidation(fig, candlestick_data, row=1, col=1)
+    _plot_vwap(fig, candlestick_data, row=1, col=1)
+    _plot_consolidation(
+        fig, candlestick_data, row=1, col=1, window=consolidation_window
+    )
+    if support_resistance_levels:
+        _plot_support_resistance(fig, support_resistance_levels, row=1, col=1)
+
     if volume_profiles and lowest_interval in volume_profiles:
         _plot_volume_profile(fig, volume_profiles[lowest_interval])
 

@@ -19,6 +19,7 @@ def calculate_volume_profile(data: pd.DataFrame, bins: int = 50) -> pd.DataFrame
             - 'Total_Volume': Sum of Bullish and Bearish volume.
             - 'POC': Boolean indicating if this bin is the Point of Control (max volume).
     """
+    # pylint: disable=too-many-locals
     if data.empty:
         return pd.DataFrame()
 
@@ -74,7 +75,7 @@ def calculate_volume_profile(data: pd.DataFrame, bins: int = 50) -> pd.DataFrame
     market_profile.loc[max_vol_idx, "POC"] = True
 
     # Select and order columns
-    return market_profile[
+    profile = market_profile[
         [
             "Price_Bin_Mid",
             "Bullish_Volume",
@@ -82,7 +83,54 @@ def calculate_volume_profile(data: pd.DataFrame, bins: int = 50) -> pd.DataFrame
             "Total_Volume",
             "POC",
         ]
-    ]
+    ].copy()
+
+    # Calculate Value Area (VA) - 70% of volume
+    total_volume = profile["Total_Volume"].sum()
+    value_area_vol = total_volume * 0.70
+
+    # Sort by Total Volume descending to accumulate highest volume nodes first
+    # This is a simplified approximation. Real Market Profile expands from POC out.
+    # Let's implement the standard way: Start at POC, expand up/down by 1 row, pick larger, repeat.
+
+    profile["In_VA"] = False
+
+    # Find POC index in the original dataframe (not sorted)
+    poc_idx = profile[profile["POC"]].index[0]
+
+    # Initialize VA with POC
+    current_vol = profile.loc[poc_idx, "Total_Volume"]
+    profile.loc[poc_idx, "In_VA"] = True
+
+    # Pointers
+    up_idx = poc_idx + 1
+    down_idx = poc_idx - 1
+
+    while current_vol < value_area_vol:
+        vol_up = 0
+        vol_down = 0
+
+        # Check bounds
+        if up_idx < len(profile):
+            vol_up = profile.loc[up_idx, "Total_Volume"]
+
+        if down_idx >= 0:
+            vol_down = profile.loc[down_idx, "Total_Volume"]
+
+        if vol_up == 0 and vol_down == 0:
+            break
+
+        # Add the larger neighbor
+        if vol_up > vol_down:
+            current_vol += vol_up
+            profile.loc[up_idx, "In_VA"] = True
+            up_idx += 1
+        else:
+            current_vol += vol_down
+            profile.loc[down_idx, "In_VA"] = True
+            down_idx -= 1
+
+    return profile
 
 
 def calculate_volume_percentiles(data: pd.DataFrame, window: int = 50) -> pd.Series:

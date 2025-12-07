@@ -1,9 +1,10 @@
 """Module for orchestrating market data processing and analysis."""
 
 import argparse
+import pandas as pd
 from src.data_fetcher import fetch_market_data
 from src.stochastic_processing import calculate_stochastic
-from src.analysis import volume, price
+from src.analysis import volume, price, indicators
 from src.chart_generator import generate_analysis_chart
 
 
@@ -26,54 +27,28 @@ def process_symbol(symbol: str, args: argparse.Namespace):
     # or the first interval. Let's store it in a separate dict or just pass it along.
     # For now, let's calculate volume profile on the first interval (usually the most granular if sorted).
     volume_profiles = {}
+    support_resistance_levels = []
 
+    # Re-implementing the loop with the helper function properly
     for interval in intervals:
         try:
             print(f"Fetching data for {symbol} with interval {interval}...")
             market_data = fetch_market_data(symbol, args.period, interval)
 
-            # 1. Stochastic (Existing)
-            print(f"Calculating stochastic for {interval}...")
-            market_data = calculate_stochastic(
-                market_data, k_window=args.k_window, d_window=args.d_window
+            # Process the data
+            market_data, vp = _process_single_interval_logic(
+                market_data, interval, args
             )
-
-            # 2. Volume Analysis
-            if args.volume_profile:
-                # Volume profile is price-based, so we store it separately or attach to metadata
-                # Here we calculate it but we need to decide how to pass it to the chart.
-                # Let's store it in the volume_profiles dict.
-                print(f"Calculating Volume Profile for {interval}...")
-                vp = volume.calculate_volume_profile(market_data, bins=args.vp_bins)
-                volume_profiles[interval] = vp
-
-            # Volume Percentiles (Time-series)
-            # We can add this to the dataframe
-            # Note: We don't have a flag for percentiles in the plan, but the user asked for it.
-            # Let's assume we always calculate it if we are doing "analysis" or add a flag.
-            # The plan said "Percentiles related to the volume data".
-            # Let's add it if a flag is present or just default to it if we want to be proactive.
-            # The plan mentioned `--ror` and `--volume-profile`. Let's assume percentiles come with volume profile
-            # or we can add a specific flag if needed. For now, let's add it to the DF.
-            print(f"Calculating Volume Percentiles for {interval}...")
-            market_data["Volume_Percentile"] = volume.calculate_volume_percentiles(
-                market_data
-            )
-
-            # 3. Price Analysis
-            if args.consolidation:
-                print(f"Detecting Consolidation for {interval}...")
-                market_data["Is_Consolidation"] = price.detect_consolidation(
-                    market_data,
-                    window=args.consolidation_window,
-                    threshold_percent=args.consolidation_threshold,
-                )
-
-            if args.ror:
-                print(f"Calculating RoR for {interval}...")
-                market_data["RoR"] = price.calculate_ror(market_data)
 
             processed_data[interval] = market_data
+            if vp is not None:
+                volume_profiles[interval] = vp
+
+            # Support & Resistance (only on first interval)
+            if args.support_resistance and interval == intervals[0]:
+                print(f"Detecting Support & Resistance for {interval}...")
+                support_resistance_levels = price.detect_support_resistance(market_data)
+
             print(f"Successfully processed interval {interval}.")
 
         except ValueError as e:
@@ -111,7 +86,56 @@ def process_symbol(symbol: str, args: argparse.Namespace):
                 symbol,
                 processed_data,
                 volume_profiles=volume_profiles,
+                support_resistance_levels=support_resistance_levels,
                 output_dir=args.save_html_dir,
+                consolidation_window=args.consolidation_window,
             )
         else:
             print(f"Condition not met for {symbol}. Skipping chart.")
+
+
+def _process_single_interval_logic(
+    market_data: pd.DataFrame, interval: str, args: argparse.Namespace
+):
+    """Helper function to process a single interval's data."""
+    # 1. Stochastic
+    print(f"Calculating stochastic for {interval}...")
+    market_data = calculate_stochastic(
+        market_data, k_window=args.k_window, d_window=args.d_window
+    )
+
+    # Calculate VWAP
+    if args.vwap:
+        print(f"Calculating VWAP for {interval}...")
+        vwap_df = indicators.calculate_vwap(market_data)
+        market_data = pd.concat([market_data, vwap_df], axis=1)
+
+    # Calculate ATR
+    if args.consolidation:
+        print(f"Calculating ATR for {interval}...")
+        market_data["ATR"] = indicators.calculate_atr(market_data)
+
+    # 2. Volume Analysis
+    vp = None
+    if args.volume_profile:
+        print(f"Calculating Volume Profile for {interval}...")
+        vp = volume.calculate_volume_profile(market_data, bins=args.vp_bins)
+
+    print(f"Calculating Volume Percentiles for {interval}...")
+    market_data["Volume_Percentile"] = volume.calculate_volume_percentiles(market_data)
+
+    # 3. Price Analysis
+    if args.consolidation:
+        print(f"Detecting Consolidation for {interval}...")
+        market_data["Is_Consolidation"] = price.detect_consolidation(
+            market_data,
+            window=args.consolidation_window,
+            threshold_multiplier=args.consolidation_atr_multiplier,
+            use_atr=True,
+        )
+
+    if args.ror:
+        print(f"Calculating RoR for {interval}...")
+        market_data["RoR"] = price.calculate_ror(market_data)
+
+    return market_data, vp

@@ -224,10 +224,20 @@ if __name__ == "__main__":
         help="Window size for consolidation detection.",
     )
     parser.add_argument(
-        "--consolidation-threshold",
+        "--consolidation-atr-multiplier",
         type=float,
-        default=2.0,
-        help="Percentage threshold for consolidation detection.",
+        default=1.5,
+        help="ATR multiplier for consolidation detection (default: 1.5).",
+    )
+    parser.add_argument(
+        "--vwap",
+        action="store_true",
+        help="Calculate and display VWAP with Standard Deviation bands.",
+    )
+    parser.add_argument(
+        "--support-resistance",
+        action="store_true",
+        help="Automatically detect and display Support and Resistance levels.",
     )
     parser.add_argument(
         "--ror",

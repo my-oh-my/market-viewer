@@ -4,15 +4,19 @@ import pandas as pd
 
 
 def detect_consolidation(
-    data: pd.DataFrame, window: int = 20, threshold_percent: float = 2.0
+    data: pd.DataFrame,
+    window: int = 20,
+    threshold_multiplier: float = 1.5,
+    use_atr: bool = True,
 ) -> pd.Series:
     """Detects consolidation periods where price stays within a narrow range.
 
     Args:
-        data: DataFrame containing 'High' and 'Low' (or 'Close') columns.
+        data: DataFrame containing 'High', 'Low', 'Close' and optionally 'ATR'.
         window: The rolling window size to check for consolidation.
-        threshold_percent: The maximum percentage difference between max and min price
-                           in the window to be considered consolidation.
+        threshold_multiplier: Multiplier for ATR to define the range threshold.
+                              If use_atr is False, this is treated as percentage (e.g. 2.0).
+        use_atr: Whether to use ATR for dynamic thresholding.
 
     Returns:
         Boolean Series indicating if the corresponding period is in consolidation.
@@ -28,9 +32,65 @@ def detect_consolidation(
         rolling_max = data["Close"].rolling(window=window).max()
         rolling_min = data["Close"].rolling(window=window).min()
 
-    price_range_percent = (rolling_max - rolling_min) / rolling_min * 100
+    price_range = rolling_max - rolling_min
 
-    return price_range_percent <= threshold_percent
+    if use_atr and "ATR" in data.columns:
+        # Dynamic threshold: Range < Multiplier * ATR
+        # We use the ATR at the end of the window (current candle)
+        threshold = data["ATR"] * threshold_multiplier
+        return price_range <= threshold
+
+    # Fallback to percentage based
+    # Note: threshold_multiplier is treated as percentage here (e.g. 2.0 for 2%)
+    price_range_percent = (price_range / rolling_min) * 100
+    return price_range_percent <= threshold_multiplier
+
+
+def detect_support_resistance(data: pd.DataFrame, window: int = 5) -> list[float]:
+    """Detects Support and Resistance levels using local extrema (fractals).
+
+    Args:
+        data: DataFrame containing 'High' and 'Low'.
+        window: Window size for local extrema (e.g., 5 means check 2 before and 2 after).
+                Must be odd.
+
+    Returns:
+        List of unique price levels.
+    """
+    if data.empty or "High" not in data.columns or "Low" not in data.columns:
+        return []
+
+    levels = []
+
+    # Simple fractal / local extrema detection
+    # A high is a resistance if it's higher than 'n' neighbors
+    # A low is a support if it's lower than 'n' neighbors
+
+    # We can use rolling max/min with center=True
+    # But rolling with center=True looks ahead, which is fine for historical analysis
+    # For live trading, we'd only know it 'window//2' bars later.
+
+    # Resistance (Local Max)
+    # We shift to align the window so that the comparison is valid for the centered element
+    # Actually, simpler: iterate or use shift logic
+    # is_max = data['High'] == data['High'].rolling(window=window, center=True).max()
+
+    # Using rolling with center=True requires future data (fine for this viewer)
+    rolling_max = data["High"].rolling(window=window, center=True).max()
+    rolling_min = data["Low"].rolling(window=window, center=True).min()
+
+    resistance_mask = data["High"] == rolling_max
+    support_mask = data["Low"] == rolling_min
+
+    # Extract levels
+    res_levels = data.loc[resistance_mask, "High"].tolist()
+    sup_levels = data.loc[support_mask, "Low"].tolist()
+
+    levels = sorted(list(set(res_levels + sup_levels)))
+
+    # Optional: Cluster nearby levels (simple version: round to nearest 0.5 or 1% diff)
+    # For now, return all raw levels.
+    return levels
 
 
 def calculate_ror(data: pd.DataFrame) -> pd.Series:
