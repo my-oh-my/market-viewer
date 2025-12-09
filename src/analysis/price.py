@@ -1,4 +1,10 @@
-"""Module for price-related analysis."""
+"""
+Module for price-related analysis.
+
+This module contains functions for analyzing price patterns, including
+consolidation detection, support and resistance level identification,
+and Rate of Return (RoR) calculation.
+"""
 
 import pandas as pd
 
@@ -9,17 +15,23 @@ def detect_consolidation(
     threshold_multiplier: float = 1.5,
     use_atr: bool = True,
 ) -> pd.Series:
-    """Detects consolidation periods where price stays within a narrow range.
+    """
+    Detects consolidation periods where price stays within a narrow range.
+
+    Consolidation is identified when the price range (High - Low or variation in Close)
+    over a specified window is below a certain threshold. The threshold can be dynamic
+    (based on ATR) or percentage-based.
 
     Args:
-        data: DataFrame containing 'High', 'Low', 'Close' and optionally 'ATR'.
-        window: The rolling window size to check for consolidation.
-        threshold_multiplier: Multiplier for ATR to define the range threshold.
-                              If use_atr is False, this is treated as percentage (e.g. 2.0).
-        use_atr: Whether to use ATR for dynamic thresholding.
+        data (pd.DataFrame): DataFrame containing 'High', 'Low', 'Close' and optionally 'ATR'.
+        window (int, optional): The rolling window size to check for consolidation. Defaults to 20.
+        threshold_multiplier (float, optional): Multiplier for ATR to define the range threshold,
+                                                or the percentage value if use_atr is False.
+                                                Defaults to 1.5.
+        use_atr (bool, optional): Whether to use ATR for dynamic thresholding. Defaults to True.
 
     Returns:
-        Boolean Series indicating if the corresponding period is in consolidation.
+        pd.Series: A Boolean Series indicating if the corresponding period is in consolidation.
     """
     if data.empty:
         return pd.Series(dtype=bool)
@@ -47,15 +59,18 @@ def detect_consolidation(
 
 
 def detect_support_resistance(data: pd.DataFrame, window: int = 5) -> list[float]:
-    """Detects Support and Resistance levels using local extrema (fractals).
+    """
+    Detects Support and Resistance levels using local extrema (fractals).
+
+    Uses a rolling window to identify local maximums (resistance) and local minimums (support).
 
     Args:
-        data: DataFrame containing 'High' and 'Low'.
-        window: Window size for local extrema (e.g., 5 means check 2 before and 2 after).
-                Must be odd.
+        data (pd.DataFrame): DataFrame containing 'High' and 'Low' columns.
+        window (int, optional): Window size for local extrema detection. Should be an odd number.
+                                Defaults to 5.
 
     Returns:
-        List of unique price levels.
+        list[float]: A sorted list of unique price levels identified as support or resistance.
     """
     if data.empty or "High" not in data.columns or "Low" not in data.columns:
         return []
@@ -94,13 +109,14 @@ def detect_support_resistance(data: pd.DataFrame, window: int = 5) -> list[float
 
 
 def calculate_ror(data: pd.DataFrame) -> pd.Series:
-    """Calculates the Rate of Return (percentage change) of the Close price.
+    """
+    Calculates the Rate of Return (percentage change) of the Close price.
 
     Args:
-        data: DataFrame containing 'Close' column.
+        data (pd.DataFrame): DataFrame containing the 'Close' column.
 
     Returns:
-        Series containing the percentage change (e.g., 1.5 for 1.5%).
+        pd.Series: A Series containing the percentage change (e.g., 1.5 for 1.5%).
     """
     if data.empty or "Close" not in data.columns:
         return pd.Series(dtype=float)
