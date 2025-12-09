@@ -1,23 +1,34 @@
-"""Module for volume-related analysis."""
+"""
+Module for volume-related analysis.
+
+This module contains functions for analyzing trading volume, including
+Market/Volume Profile calculation (Value Area, POC) and volume percentiles.
+"""
 
 import pandas as pd
 import numpy as np
 
 
 def calculate_volume_profile(data: pd.DataFrame, bins: int = 50) -> pd.DataFrame:
-    """Calculates the Market Profile (Volume Profile) with Bullish/Bearish breakdown.
+    """
+    Calculates the Market Profile (Volume Profile) with Bullish/Bearish breakdown.
+
+    This function distributes volume into price bins based on the closing price of each period.
+    It calculates total volume, bullish/bearish volume split, Point of Control (POC),
+    and the Value Area (VA) which covers 70% of the volume.
 
     Args:
-        data: DataFrame containing 'Open', 'Close', and 'Volume' columns.
-        bins: Number of bins to divide the price range into.
+        data (pd.DataFrame): DataFrame containing 'Open', 'Close', and 'Volume' columns.
+        bins (int, optional): Number of bins to divide the price range into. Defaults to 50.
 
     Returns:
-        DataFrame with columns:
+        pd.DataFrame: A DataFrame representing the volume profile, with columns:
             - 'Price_Bin_Mid': Midpoint of the price bin.
             - 'Bullish_Volume': Volume where Close > Open.
             - 'Bearish_Volume': Volume where Close <= Open.
             - 'Total_Volume': Sum of Bullish and Bearish volume.
             - 'POC': Boolean indicating if this bin is the Point of Control (max volume).
+            - 'In_VA': Boolean indicating if this bin is within the Value Area (70%).
     """
     # pylint: disable=too-many-locals
     if data.empty:
@@ -134,14 +145,15 @@ def calculate_volume_profile(data: pd.DataFrame, bins: int = 50) -> pd.DataFrame
 
 
 def calculate_volume_percentiles(data: pd.DataFrame, window: int = 50) -> pd.Series:
-    """Calculates the rolling percentile of the current volume relative to the past window.
+    """
+    Calculates the rolling percentile of the current volume relative to past activity.
 
     Args:
-        data: DataFrame containing 'Volume' column.
-        window: The lookback window for percentile calculation.
+        data (pd.DataFrame): DataFrame containing the 'Volume' column.
+        window (int, optional): The lookback window for percentile calculation. Defaults to 50.
 
     Returns:
-        Series containing the volume percentile (0.0 to 1.0).
+        pd.Series: A Series containing the volume percentile (0.0 to 1.0).
     """
     if data.empty or "Volume" not in data.columns:
         return pd.Series(dtype=float)

@@ -1,4 +1,11 @@
-"""Module for orchestrating market data processing and analysis."""
+"""
+Module for orchestrating market data processing and analysis.
+
+This module provides the core logic for processing market symbols. It coordinates
+data fetching, calculation of technical indicators (Stochastic, VWAP, ATR),
+analysis (Volume Profile, Consolidation, Support/Resistance), and
+chart generation.
+"""
 
 import argparse
 import pandas as pd
@@ -9,11 +16,18 @@ from src.chart_generator import generate_analysis_chart
 
 
 def process_symbol(symbol: str, args: argparse.Namespace):
-    """Processes a single symbol: fetches data, runs analysis, and generates charts.
+    """
+    Processes a single symbol: fetches data, runs analysis, and generates charts.
+
+    This function iterates through the specified time intervals, fetches the corresponding
+    market data, and computes enabled technical indicators and analysis metrics.
+    If the plotting conditions are met (or if --plot-all is used), it generates
+    an interactive dashboard.
 
     Args:
-        symbol: The market symbol to process.
-        args: Parsed CLI arguments.
+        symbol (str): The market symbol to process (e.g., 'BTC-USD').
+        args (argparse.Namespace): Parsed command-line arguments containing configuration
+                                   flags and parameters.
     """
     print(f"\nProcessing symbol: {symbol}")
     intervals = [interval.strip() for interval in args.intervals.split(",")]
@@ -89,6 +103,7 @@ def process_symbol(symbol: str, args: argparse.Namespace):
                 support_resistance_levels=support_resistance_levels,
                 output_dir=args.save_html_dir,
                 consolidation_window=args.consolidation_window,
+                trend_shift=args.trend_shift if args.trend else None,
             )
         else:
             print(f"Condition not met for {symbol}. Skipping chart.")
@@ -96,8 +111,29 @@ def process_symbol(symbol: str, args: argparse.Namespace):
 
 def _process_single_interval_logic(
     market_data: pd.DataFrame, interval: str, args: argparse.Namespace
-):
-    """Helper function to process a single interval's data."""
+) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    """
+    Helper function to process a single interval's data.
+
+    Calculates various indicators based on the provided arguments:
+    - Stochastic Oscillator
+    - VWAP (Volume Weighted Average Price)
+    - ATR (Average True Range)
+    - Volume Profile
+    - Volume Percentiles
+    - Consolidation Zones
+    - Rate of Return (RoR)
+
+    Args:
+        market_data (pd.DataFrame): The raw OHLCV market data.
+        interval (str): The time interval being processed.
+        args (argparse.Namespace): Parsed command-line arguments.
+
+    Returns:
+        tuple[pd.DataFrame, pd.DataFrame | None]:
+            - The market data DataFrame enriched with calculated indicators.
+            - The Volume Profile DataFrame (or None if not calculated).
+    """
     # 1. Stochastic
     print(f"Calculating stochastic for {interval}...")
     market_data = calculate_stochastic(

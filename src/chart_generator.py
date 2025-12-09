@@ -1,13 +1,32 @@
-"""Module for generating charts."""
+"""
+Module for generating financial charts using Plotly.
+
+This module provides functions to create interactive dashboards that visualize
+price data, technical indicators (Stochastic, VWAP), volume profiles,
+consolidation zones, and potential support/resistance levels.
+"""
 
 import os
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from src.analysis.trend import calculate_trend_indicator
+
 
 def _parse_interval_to_minutes(interval_str: str) -> int:
-    """Converts an interval string (e.g., '1m', '1h', '1d', '1wk', '1mo') to minutes."""
+    """
+    Converts an interval string to minutes.
+
+    Args:
+        interval_str (str): The interval string (e.g., '1m', '1h', '1d', '1wk').
+
+    Returns:
+        int: The equivalent duration in minutes.
+
+    Raises:
+        ValueError: If the interval format is invalid or unknown.
+    """
     unit_map = {"m": 1, "h": 60, "d": 24 * 60, "wk": 7 * 24 * 60}
     sorted_units = sorted(unit_map.keys(), key=len, reverse=True)
 
@@ -23,7 +42,16 @@ def _parse_interval_to_minutes(interval_str: str) -> int:
 def _plot_candlestick(
     fig: go.Figure, data: pd.DataFrame, interval: str, row: int, col: int
 ):
-    """Adds a candlestick trace to the figure."""
+    """
+    Adds a candlestick trace to the figure.
+
+    Args:
+        fig (go.Figure): The Plotly figure to add the trace to.
+        data (pd.DataFrame): The DataFrame containing OHLC data.
+        interval (str): The time interval label for the legend.
+        row (int): The row index for the subplot.
+        col (int): The column index for the subplot.
+    """
     fig.add_trace(
         go.Candlestick(
             x=data["Datetime"],
@@ -46,7 +74,17 @@ def _plot_stochastic(
     col: int | None = None,
     yaxis: str | None = None,
 ):  # pylint: disable=too-many-arguments
-    """Adds stochastic oscillator traces to the figure."""
+    """
+    Adds stochastic oscillator traces (%K and %D) to the figure.
+
+    Args:
+        fig (go.Figure): The Plotly figure to add traces to.
+        data (pd.DataFrame): The DataFrame containing '%K' and '%D' columns.
+        interval (str): The time interval label for the legend.
+        row (int, optional): The row index for the subplot. Defaults to None.
+        col (int, optional): The column index for the subplot. Defaults to None.
+        yaxis (str, optional): The y-axis reference (e.g., 'y2') if overlaying. Defaults to None.
+    """
     # Common args for traces
     trace_args = {
         "x": data["Datetime"],
@@ -80,7 +118,15 @@ def _plot_stochastic(
 
 
 def _plot_vwap(fig: go.Figure, data: pd.DataFrame, row: int, col: int):
-    """Adds VWAP and SD bands to the figure."""
+    """
+    Adds VWAP and Standard Deviation bands to the figure.
+
+    Args:
+        fig (go.Figure): The Plotly figure to add traces to.
+        data (pd.DataFrame): The DataFrame containing 'VWAP', 'VWAP_Upper', and 'VWAP_Lower'.
+        row (int): The row index for the subplot.
+        col (int): The column index for the subplot.
+    """
     if "VWAP" not in data.columns:
         return
 
@@ -126,8 +172,115 @@ def _plot_vwap(fig: go.Figure, data: pd.DataFrame, row: int, col: int):
         )
 
 
+def _plot_trend_indicator(
+    fig: go.Figure, data: pd.DataFrame, trend_data: pd.DataFrame, row: int, col: int
+):
+    """
+    Adds the trend indicator line to the chart.
+
+    Args:
+        fig (go.Figure): The Plotly figure.
+        data (pd.DataFrame): The original OHLC data.
+        trend_data (pd.DataFrame): DataFrame with 'Trend_Indicator' and 'Trend_Direction'.
+        row (int): Subplot row.
+        col (int): Subplot column.
+    """
+    if trend_data.empty or "Trend_Indicator" not in trend_data.columns:
+        return
+
+    # Create a single trace, but maybe color it differently based on trend?
+    # Plotly lines are single color per trace usually.
+    # To show Green for Up, Red for Down, we can split into two traces or use segments.
+    # Simpler: Split into Uptrend segments and Downtrend segments.
+
+    # However, to avoid gaps, we might want to plot the whole line as one trace (e.g. gray or white)
+    # AND overlay colored segments? Or just use one line with a color array (complex in simple go.Scatter).
+
+    # Approach: Two traces.
+    # Uptrend Points: value if Direction == 1 else NaN
+    # Downtrend Points: value if Direction == -1 else NaN
+
+    up_trend = trend_data["Trend_Indicator"].copy()
+    down_trend = trend_data["Trend_Indicator"].copy()
+
+    up_trend[trend_data["Trend_Direction"] != 1] = None
+    down_trend[trend_data["Trend_Direction"] != -1] = None
+
+    fig.add_trace(
+        go.Scatter(
+            x=data["Datetime"],
+            y=up_trend,
+            mode="markers",
+            name="Trend Support",
+            marker={"color": "green", "size": 4, "symbol": "triangle-up"},
+            opacity=0.8,
+            legendgroup="Trend",
+            showlegend=True,
+        ),
+        row=row,
+        col=col,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=data["Datetime"],
+            y=down_trend,
+            mode="markers",
+            name="Trend Resistance",
+            marker={"color": "red", "size": 4, "symbol": "triangle-down"},
+            opacity=0.8,
+            legendgroup="Trend",
+            showlegend=True,
+        ),
+        row=row,
+        col=col,
+    )
+
+    # Also line for continuity?
+    # Let's try just markers first as it might be cleaner than connected lines with gaps.
+    # Or connected lines with `connectgaps=False`.
+
+    fig.add_trace(
+        go.Scatter(
+            x=data["Datetime"],
+            y=up_trend,
+            mode="lines",
+            name="Trend Up Line",
+            line={"color": "green", "width": 2},
+            connectgaps=False,
+            showlegend=False,
+            legendgroup="Trend",
+        ),
+        row=row,
+        col=col,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=data["Datetime"],
+            y=down_trend,
+            mode="lines",
+            name="Trend Down Line",
+            line={"color": "red", "width": 2},
+            connectgaps=False,
+            showlegend=False,
+            legendgroup="Trend",
+        ),
+        row=row,
+        col=col,
+    )
+
+
 def _plot_support_resistance(fig: go.Figure, levels: list[float], row: int, col: int):
-    """Adds Support and Resistance lines."""
+    """
+    Adds horizontal lines for Support and Resistance levels.
+
+    Args:
+        fig (go.Figure): The Plotly figure to add shapes to.
+        levels (list[float]): A list of price levels to plot.
+        row (int): The row index for the subplot.
+        col (int): The column index for the subplot.
+    """
     if not levels:
         return
 
@@ -145,7 +298,16 @@ def _plot_support_resistance(fig: go.Figure, levels: list[float], row: int, col:
 def _plot_consolidation(
     fig: go.Figure, data: pd.DataFrame, row: int, col: int, window: int = 20
 ):
-    """Highlights consolidation regions on the chart."""
+    """
+    Highlights consolidation regions on the chart.
+
+    Args:
+        fig (go.Figure): The Plotly figure to add shapes to.
+        data (pd.DataFrame): The DataFrame containing 'Is_Consolidation' flag.
+        row (int): The row index for the subplot.
+        col (int): The column index for the subplot.
+        window (int, optional): The lookback window used for detection. Defaults to 20.
+    """
     if "Is_Consolidation" not in data.columns:
         return
 
@@ -183,7 +345,16 @@ def _plot_consolidation(
 
 
 def _plot_volume_profile(fig: go.Figure, volume_profile: pd.DataFrame):
-    """Adds a Volume Profile histogram to the chart."""
+    """
+    Adds a Volume Profile histogram to the chart.
+
+    Overlaying is achieved by using a secondary x-axis (xaxis5) on top of the main chart.
+
+    Args:
+        fig (go.Figure): The Plotly figure to add traces to.
+        volume_profile (pd.DataFrame): DataFrame containing 'Price_Bin_Mid', 'Bullish_Volume',
+                                       'Bearish_Volume', and optionally 'In_VA', 'POC'.
+    """
     if volume_profile.empty:
         return
 
@@ -347,7 +518,17 @@ def _plot_distribution(
     col: int,
     color: str = "blue",
 ):  # pylint: disable=too-many-arguments
-    """Adds a histogram distribution to the figure."""
+    """
+    Adds a histogram distribution to the figure.
+
+    Args:
+        fig (go.Figure): The Plotly figure to add the histogram to.
+        data (pd.Series): The numerical data series to calculate the distribution from.
+        name (str): The name of the distribution (e.g., 'RoR', 'Volume').
+        row (int): The row index for the subplot.
+        col (int): The column index for the subplot.
+        color (str, optional): The color of the histogram bars. Defaults to "blue".
+    """
     if data.empty:
         return
 
@@ -385,14 +566,39 @@ def generate_analysis_chart(
     support_resistance_levels: list[float] | None = None,
     output_dir: str | None = None,
     consolidation_window: int = 20,
+    trend_shift: int | None = None,
 ):  # pylint: disable=too-many-arguments
-    """Generates and saves/displays a dashboard with analysis features."""
+    """
+    Generates and saves/displays a comprehensive market analysis dashboard.
+
+    The dashboard includes:
+    1. Main Price Chart (Candlestick) with VWAP, Consolidation zones, and Support/Resistance levels.
+    2. Volume Profile overlay on the price chart.
+    3. Stochastic Oscillator subplot.
+    4. Rate of Return (RoR) Distribution subplot.
+    5. Volume Distribution subplot.
+    6. Trend Indicator (Optional).
+
+    Args:
+        symbol (str): The ticker symbol.
+        data_dict (dict[str, pd.DataFrame]): Dictionary mapping intervals to DataFrames.
+        volume_profiles (dict[str, pd.DataFrame] | None, optional): Dictionary of volume profiles. Defaults to None.
+        support_resistance_levels (list[float] | None, optional): List of S/R price levels. Defaults to None.
+        output_dir (str | None, optional): Directory to save the HTML chart. If None, shows the chart. Defaults to None.
+        consolidation_window (int, optional): Window size used for consolidation text. Defaults to 20.
+        trend_shift (int | None, optional): If provided, calculates and plots the trend indicator with this shift.
+    """
     if not data_dict:
         print("No data to plot.")
         return
 
     lowest_interval = min(data_dict.keys(), key=_parse_interval_to_minutes)
     candlestick_data = data_dict[lowest_interval].copy()
+
+    # Calculate Trend if requested
+    trend_data = pd.DataFrame()
+    if trend_shift is not None:
+        trend_data = calculate_trend_indicator(candlestick_data, shift=trend_shift)
 
     # Create subplots
     # Row 1: Price + Volume Profile + Consolidation (Span 2 cols)
@@ -425,6 +631,9 @@ def generate_analysis_chart(
     )
     if support_resistance_levels:
         _plot_support_resistance(fig, support_resistance_levels, row=1, col=1)
+
+    if not trend_data.empty:
+        _plot_trend_indicator(fig, candlestick_data, trend_data, row=1, col=1)
 
     if volume_profiles and lowest_interval in volume_profiles:
         _plot_volume_profile(fig, volume_profiles[lowest_interval])
@@ -471,6 +680,10 @@ def generate_analysis_chart(
         barmode="stack",
         height=1000,
         width=1400,
+        xaxis_range=[
+            candlestick_data["Datetime"].iloc[0],
+            candlestick_data["Datetime"].iloc[-1],
+        ],
     )
 
     fig.update_yaxes(title_text="Price", row=1, col=1)

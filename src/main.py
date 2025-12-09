@@ -1,4 +1,10 @@
-"""Main entry point for the application."""
+"""
+Main entry point for the Market Viewer application.
+
+This module handles command-line arguments to configure the market analysis process.
+It allows users to specify symbols, time periods, intervals, and various analysis flags
+(Stochastic, Volume Profile, Consolidation, VWAP, Support/Resistance, RoR).
+"""
 
 import argparse
 from src.processor import process_symbol
@@ -157,6 +163,7 @@ SYMBOLS = ",".join(W20_SYMBOLS + MWIG40_SYMBOLS + SWIG80_SYMBOLS)
 
 
 if __name__ == "__main__":
+    # Parses CLI arguments and initiates the processing for each symbol.
     parser = argparse.ArgumentParser(description="Market Viewer")
     parser.add_argument(
         "--symbols",
@@ -243,6 +250,17 @@ if __name__ == "__main__":
         "--ror",
         action="store_true",
         help="Calculate and display Rate of Return.",
+    )
+    parser.add_argument(
+        "--trend",
+        action="store_true",
+        help="Calculate and display Trend Indicator.",
+    )
+    parser.add_argument(
+        "--trend-shift",
+        type=int,
+        default=5,
+        help="Shift parameter for the Trend Indicator (default: 5).",
     )
 
     args = parser.parse_args()

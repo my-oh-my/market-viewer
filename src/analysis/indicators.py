@@ -1,4 +1,9 @@
-"""Module for general technical indicators."""
+"""
+Module for general technical indicators.
+
+This module provides functions to calculate common technical indicators such as
+Volume Weighted Average Price (VWAP) and Average True Range (ATR).
+"""
 
 import pandas as pd
 
@@ -6,17 +11,22 @@ import pandas as pd
 def calculate_vwap(
     data: pd.DataFrame, window: int | None = None, num_std: float = 2.0
 ) -> pd.DataFrame:
-    """Calculates Volume Weighted Average Price (VWAP) and Standard Deviation Bands.
+    """
+    Calculates Volume Weighted Average Price (VWAP) and Standard Deviation Bands.
+
+    VWAP is calculated as the cumulative sum of price * volume divided by cumulative volume.
+    Standard deviation bands are approximated using the standard deviation of the close price.
 
     Args:
-        data: DataFrame containing 'High', 'Low', 'Close', 'Volume'.
-              If 'Datetime' is present, it can be used for anchoring (not implemented yet,
-              defaulting to rolling or full series).
-        window: Rolling window size. If None, calculates cumulative VWAP (anchored to start).
-        num_std: Number of standard deviations for the bands.
+        data (pd.DataFrame): DataFrame containing 'High', 'Low', 'Close', and 'Volume' columns.
+        window (int | None, optional): Rolling window size. If None, calculates cumulative VWAP
+                                       anchored to the start of the data. Defaults to None.
+        num_std (float, optional): Number of standard deviations for the upper/lower bands.
+                                   Defaults to 2.0.
 
     Returns:
-        DataFrame with columns 'VWAP', 'VWAP_Upper', 'VWAP_Lower'.
+        pd.DataFrame: A DataFrame with columns 'VWAP', 'VWAP_Upper', and 'VWAP_Lower',
+                      indexed by the same index as the input data.
     """
     if data.empty:
         return pd.DataFrame()
@@ -58,14 +68,21 @@ def calculate_vwap(
 
 
 def calculate_atr(data: pd.DataFrame, window: int = 14) -> pd.Series:
-    """Calculates Average True Range (ATR).
+    """
+    Calculates Average True Range (ATR).
+
+    ATR is a measure of volatility. It is calculated as the rolling mean of the True Range (TR).
+    True Range is the maximum of:
+    - High - Low
+    - |High - Previous Close|
+    - |Low - Previous Close|
 
     Args:
-        data: DataFrame containing 'High', 'Low', 'Close'.
-        window: Smoothing window.
+        data (pd.DataFrame): DataFrame containing 'High', 'Low', and 'Close' columns.
+        window (int, optional): The smoothing window size. Defaults to 14.
 
     Returns:
-        Series containing ATR values.
+        pd.Series: A Series containing the ATR values.
     """
     if data.empty:
         return pd.Series(dtype=float)
