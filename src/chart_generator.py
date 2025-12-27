@@ -644,6 +644,14 @@ def _create_chart_config(  # pylint: disable=too-many-arguments
     )
 
 
+def _calculate_y_axis_range(data: pd.DataFrame) -> list[float]:
+    """Calculates the Y-axis range based on price data to prevent 0-scaling issues."""
+    y_min = data["Low"].min()
+    y_max = data["High"].max()
+    y_padding = (y_max - y_min) * 0.05
+    return [y_min - y_padding, y_max + y_padding]
+
+
 def generate_analysis_chart(
     symbol: str,
     data_dict: dict[str, pd.DataFrame],
@@ -686,8 +694,8 @@ def generate_analysis_chart(
     fig = make_subplots(
         rows=subplot_config.rows,
         cols=2,
-        shared_xaxes=True,
-        vertical_spacing=0.03,
+        shared_xaxes=False,
+        vertical_spacing=0.1,
         row_heights=subplot_config.row_heights,
         specs=subplot_config.specs,
         subplot_titles=subplot_config.subplot_titles,
@@ -710,6 +718,9 @@ def generate_analysis_chart(
         _plot_stochastic(
             fig, data, interval, row=subplot_config.indices["stoch"], col=1
         )
+
+    # Link Stochastic x-axis to Price x-axis
+    fig.update_xaxes(matches="x", row=subplot_config.indices["stoch"], col=1)
 
     # Stochastic levels
     fig.add_hline(
@@ -748,6 +759,9 @@ def generate_analysis_chart(
             color="orange",
         )
 
+    # Calculate Y-axis range to prevent 0-scaling issue with POC
+    y_range = _calculate_y_axis_range(config.candlestick_data)
+
     # Layout updates
     fig.update_layout(
         title_text=f"Market Analysis Dashboard for {symbol}",
@@ -762,6 +776,7 @@ def generate_analysis_chart(
             config.candlestick_data["Datetime"].iloc[0],
             config.candlestick_data["Datetime"].iloc[-1],
         ],
+        yaxis_range=y_range,  # Apply calculated Y range
     )
 
     fig.update_yaxes(title_text="Price", row=1, col=1)
