@@ -7,11 +7,37 @@ consolidation zones, and potential support/resistance levels.
 """
 
 import os
+from dataclasses import dataclass
+
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from src.analysis.trend import calculate_trend_indicator
+
+
+@dataclass
+class ChartConfig:  # pylint: disable=too-many-instance-attributes
+    """Configuration and data for generating the analysis chart."""
+
+    symbol: str
+    candlestick_data: pd.DataFrame
+    lowest_interval: str
+    consolidation_window: int
+    support_resistance_levels: list[float] | None
+    trend_data: pd.DataFrame
+    volume_profiles: dict
+
+
+@dataclass
+class SubplotConfig:
+    """Configuration for chart subplots."""
+
+    rows: int
+    row_heights: list[float]
+    specs: list[list]
+    subplot_titles: list[str]
+    indices: dict[str, int]
 
 
 def _parse_interval_to_minutes(interval_str: str) -> int:
@@ -425,40 +451,9 @@ def _plot_volume_profile(fig: go.Figure, volume_profile: pd.DataFrame):
         fig.add_trace(
             go.Bar(
                 y=volume_profile[~volume_profile["In_VA"]]["Price_Bin_Mid"],
-                x=volume_profile[~volume_profile["In_VA"]]["Bearish_Volume"],
-                orientation="h",
-                name="Bearish Vol",
-                marker_color="rgba(255, 0, 0, 0.2)",  # Lighter Red
-                xaxis="x5",
-                yaxis="y",
                 legendgroup="Volume Profile",
             )
         )
-
-        # Plot VAH and VAL lines
-        va_prices = volume_profile[volume_profile["In_VA"]]["Price_Bin_Mid"]
-        if not va_prices.empty:
-            vah = va_prices.max()
-            val = va_prices.min()
-
-            fig.add_hline(
-                y=vah,
-                line_color="orange",
-                line_width=1,
-                line_dash="dash",
-                row=1,
-                col=1,
-                annotation_text="VAH",
-            )
-            fig.add_hline(
-                y=val,
-                line_color="orange",
-                line_width=1,
-                line_dash="dash",
-                row=1,
-                col=1,
-                annotation_text="VAL",
-            )
 
     else:
         # Fallback to old simple plotting
@@ -559,6 +554,96 @@ def _plot_distribution(
     )
 
 
+def _configure_subplot_specs(symbol: str, lowest_interval: str) -> SubplotConfig:
+    """
+    Configures subplot specifications based on enabled features.
+
+    Args:
+        symbol (str): The ticker symbol.
+        lowest_interval (str): The interval string for the price chart (e.g., '1h').
+
+    Returns:
+        SubplotConfig: Configuration object for subplots.
+    """
+    rows = 3
+    row_heights = [0.5, 0.2, 0.3]
+    specs = [
+        [{"colspan": 2}, None],
+        [{"colspan": 2}, None],
+        [{}, {}],
+    ]
+    subplot_titles = [
+        f"{symbol} Price ({lowest_interval})",
+        "",
+        "RoR Distribution",
+        "Volume Distribution",
+    ]
+    indices = {"stoch": 2, "dist": 3}
+
+    return SubplotConfig(
+        rows=rows,
+        row_heights=row_heights,
+        specs=specs,
+        subplot_titles=subplot_titles,
+        indices=indices,
+    )
+
+
+def _plot_price_chart_components(fig: go.Figure, config: ChartConfig):
+    """Plots the main price chart and its overlays."""
+    # 1. Price Chart (Row 1, Col 1 - spans 2)
+    _plot_candlestick(
+        fig, config.candlestick_data, config.lowest_interval, row=1, col=1
+    )
+    _plot_vwap(fig, config.candlestick_data, row=1, col=1)
+    _plot_consolidation(
+        fig,
+        config.candlestick_data,
+        row=1,
+        col=1,
+        window=config.consolidation_window,
+    )
+    if config.support_resistance_levels:
+        _plot_support_resistance(fig, config.support_resistance_levels, row=1, col=1)
+
+    if not config.trend_data.empty:
+        _plot_trend_indicator(
+            fig, config.candlestick_data, config.trend_data, row=1, col=1
+        )
+
+    if config.volume_profiles and config.lowest_interval in config.volume_profiles:
+        _plot_volume_profile(fig, config.volume_profiles[config.lowest_interval])
+
+
+def _create_chart_config(  # pylint: disable=too-many-arguments
+    symbol: str,
+    data_dict: dict[str, pd.DataFrame],
+    lowest_interval: str,
+    consolidation_window: int,
+    support_resistance_levels: list[float] | None,
+    trend_shift: int | None,
+    volume_profiles: dict | None,
+) -> ChartConfig:
+    """Creates the ChartConfig object, calculating necessary data."""
+    candlestick_data = data_dict[lowest_interval].copy()
+
+    # Calculate Trend if requested
+    if trend_shift is not None:
+        trend_data = calculate_trend_indicator(candlestick_data, shift=trend_shift)
+    else:
+        trend_data = pd.DataFrame()
+
+    return ChartConfig(
+        symbol=symbol,
+        candlestick_data=candlestick_data,
+        lowest_interval=lowest_interval,
+        consolidation_window=consolidation_window,
+        support_resistance_levels=support_resistance_levels,
+        trend_data=trend_data,
+        volume_profiles=volume_profiles or {},
+    )
+
+
 def generate_analysis_chart(
     symbol: str,
     data_dict: dict[str, pd.DataFrame],
@@ -587,85 +672,78 @@ def generate_analysis_chart(
         output_dir (str | None, optional): Directory to save the HTML chart. If None, shows the chart. Defaults to None.
         consolidation_window (int, optional): Window size used for consolidation text. Defaults to 20.
         trend_shift (int | None, optional): If provided, calculates and plots the trend indicator with this shift.
+        daily_volume_profile (bool, optional): If True, plots daily volume profiles. Defaults to False.
     """
     if not data_dict:
         print("No data to plot.")
         return
 
     lowest_interval = min(data_dict.keys(), key=_parse_interval_to_minutes)
-    candlestick_data = data_dict[lowest_interval].copy()
 
-    # Calculate Trend if requested
-    trend_data = pd.DataFrame()
-    if trend_shift is not None:
-        trend_data = calculate_trend_indicator(candlestick_data, shift=trend_shift)
+    # Configure subplots
+    subplot_config = _configure_subplot_specs(symbol, lowest_interval)
 
-    # Create subplots
-    # Row 1: Price + Volume Profile + Consolidation (Span 2 cols)
-    # Row 2: Stochastic (Span 2 cols)
-    # Row 3: RoR Distribution (Col 1) | Volume Distribution (Col 2)
     fig = make_subplots(
-        rows=3,
+        rows=subplot_config.rows,
         cols=2,
-        shared_xaxes=True,  # Shared for Row 1 and 2 (Price & Stoch)
-        vertical_spacing=0.05,  # Minimal spacing to prevent overlap while keeping visual connection
-        row_heights=[0.5, 0.2, 0.3],  # Give Price more room, Stoch less
-        specs=[
-            [{"colspan": 2}, None],  # Row 1: Price
-            [{"colspan": 2}, None],  # Row 2: Stochastic
-            [{}, {}],  # Row 3: Distributions
-        ],
-        subplot_titles=(
-            f"{symbol} Price ({lowest_interval})",
-            "",  # No title for Stochastic to blend it with Price
-            "RoR Distribution",
-            "Volume Distribution",
-        ),
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        row_heights=subplot_config.row_heights,
+        specs=subplot_config.specs,
+        subplot_titles=subplot_config.subplot_titles,
     )
 
-    # 1. Price Chart (Row 1, Col 1 - spans 2)
-    _plot_candlestick(fig, candlestick_data, lowest_interval, row=1, col=1)
-    _plot_vwap(fig, candlestick_data, row=1, col=1)
-    _plot_consolidation(
-        fig, candlestick_data, row=1, col=1, window=consolidation_window
+    config = _create_chart_config(
+        symbol=symbol,
+        data_dict=data_dict,
+        lowest_interval=lowest_interval,
+        consolidation_window=consolidation_window,
+        support_resistance_levels=support_resistance_levels,
+        trend_shift=trend_shift,
+        volume_profiles=volume_profiles,
     )
-    if support_resistance_levels:
-        _plot_support_resistance(fig, support_resistance_levels, row=1, col=1)
 
-    if not trend_data.empty:
-        _plot_trend_indicator(fig, candlestick_data, trend_data, row=1, col=1)
+    _plot_price_chart_components(fig, config)
 
-    if volume_profiles and lowest_interval in volume_profiles:
-        _plot_volume_profile(fig, volume_profiles[lowest_interval])
-
-    # 2. Stochastic (Row 2, Col 1 - spans 2)
-    # We plot this in the second row, sharing x-axis with Row 1
+    # 2. Stochastic (Row 2 or 3)
     for interval, data in data_dict.items():
-        _plot_stochastic(fig, data, interval, row=2, col=1)
+        _plot_stochastic(
+            fig, data, interval, row=subplot_config.indices["stoch"], col=1
+        )
 
     # Stochastic levels
-    fig.add_hline(y=80, line_dash="dot", line_color="red", row=2, col=1)
-    fig.add_hline(y=20, line_dash="dot", line_color="green", row=2, col=1)
+    fig.add_hline(
+        y=80,
+        line_dash="dot",
+        line_color="red",
+        row=subplot_config.indices["stoch"],
+        col=1,
+    )
+    fig.add_hline(
+        y=20,
+        line_dash="dot",
+        line_color="green",
+        row=subplot_config.indices["stoch"],
+        col=1,
+    )
 
-    # 3. Distributions (Row 3)
-    # RoR Distribution (Col 1)
-    if "RoR" in candlestick_data.columns:
+    # 3. Distributions (Row 3 or 4)
+    if "RoR" in config.candlestick_data.columns:
         _plot_distribution(
             fig,
-            candlestick_data["RoR"].dropna(),
+            config.candlestick_data["RoR"].dropna(),
             "RoR",
-            row=3,
+            row=subplot_config.indices["dist"],
             col=1,
             color="purple",
         )
 
-    # Volume Distribution (Col 2)
-    if "Volume" in candlestick_data.columns:
+    if "Volume" in config.candlestick_data.columns:
         _plot_distribution(
             fig,
-            candlestick_data["Volume"],
+            config.candlestick_data["Volume"],
             "Volume",
-            row=3,
+            row=subplot_config.indices["dist"],
             col=2,
             color="orange",
         )
@@ -681,15 +759,15 @@ def generate_analysis_chart(
         height=1000,
         width=1400,
         xaxis_range=[
-            candlestick_data["Datetime"].iloc[0],
-            candlestick_data["Datetime"].iloc[-1],
+            config.candlestick_data["Datetime"].iloc[0],
+            config.candlestick_data["Datetime"].iloc[-1],
         ],
     )
 
     fig.update_yaxes(title_text="Price", row=1, col=1)
-    fig.update_yaxes(title_text="Stoch", row=2, col=1)
-    fig.update_xaxes(title_text="RoR %", row=3, col=1)
-    fig.update_xaxes(title_text="Volume", row=3, col=2)
+    fig.update_yaxes(title_text="Stoch", row=subplot_config.indices["stoch"], col=1)
+    fig.update_xaxes(title_text="RoR %", row=subplot_config.indices["dist"], col=1)
+    fig.update_xaxes(title_text="Volume", row=subplot_config.indices["dist"], col=2)
 
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
