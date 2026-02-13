@@ -175,3 +175,15 @@ def _process_single_interval_logic(
         market_data["RoR"] = price.calculate_ror(market_data)
 
     return market_data, vp
+
+
+def run(args: argparse.Namespace):
+    """
+    Main entry point for running the market analysis for multiple symbols.
+
+    Args:
+        args (argparse.Namespace): Parsed command-line arguments.
+    """
+    symbols_list = [s.strip() for s in args.symbols.split(",")]
+    for symbol in symbols_list:
+        process_symbol(symbol, args)

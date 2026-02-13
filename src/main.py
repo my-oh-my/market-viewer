@@ -7,7 +7,7 @@ It allows users to specify symbols, time periods, intervals, and various analysi
 """
 
 import argparse
-from src.processor import process_symbol
+from src.processor import run
 
 
 W20_SYMBOLS = [
@@ -265,6 +265,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    symbols_list = [s.strip() for s in args.symbols.split(",")]
-    for symbol in symbols_list:
-        process_symbol(symbol, args)
+    run(args)

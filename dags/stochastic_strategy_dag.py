@@ -11,7 +11,7 @@ from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 
-from src.stochastic_processing import run
+from src.processor import run
 
 
 def _run_strategy():
